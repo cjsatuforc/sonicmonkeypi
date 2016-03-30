@@ -1,0 +1,64 @@
+#!/usr/bin/perl
+# Soundmonkey for tiny Linuxes
+# Required: curl, play (sox) - or edit $Get and $Player
+# Optional: Edit keyword list (see @Keywords)
+# Hint: Run several instances
+# To do: Get/track paged results, local sounds cache, author info display 
+
+my $Get="/usr/bin/curl -o -";
+# my $Player="/usr/bin/play -q \"_AUDIOURL_\" fade 1.5 8 1.5";
+my $Player="/usr/bin/play -q \"_AUDIOURL_\" fade 3.5 ";
+my @Keywords=split(
+  /\,/, 
+  "ambiance,ambience,atmosphere,background,background-sound,"
+  ."environment,environmental,soundscape"
+);
+my $Host="http://www.freesound.org/apiv2";
+my $Token="99e6ae450631b8228756d83de03a24ef87f593ae";
+my $Search="search/text/?query=_KEYWORD_&token=$Token";
+my $Info="sounds/_SOUNDID_/?token=$Token";
+
+while (true) {
+
+  # Choose a keyword search
+  $Keywordindex = int(rand(@Keywords));
+  $Query = "$Host/$Search";
+  $Query =~ s/_KEYWORD_/@Keywords[$Keywordindex]/g;
+
+  # Get search listing
+  $Response = `$Get \"$Query\"`; 
+  $Sounds = $1 if ($Response =~ /\"count\"\:\s*(\d+)\,/);
+  @Response = split (/\,/, $Response);
+  @SoundIDs = grep (/\"id\"\:\s\d+/, @Response); 
+  @SoundIDs = grep (s/\D+//g, @SoundIDs);
+
+  # Pick a sound ID
+  $Selected = @SoundIDs[int(rand(scalar(@SoundIDs)))]; 
+
+  # Get the sound metadata record
+  $Query = "$Host/$Info";
+  $Query =~ s/_SOUNDID_/$Selected/g;
+  $Response = `$Get \"$Query\"`; 
+  $Preview = $1 if ($Response =~ /\"preview-hq-ogg\"\:\s*\"(.*\.ogg)\"\,/);
+
+  # Info
+  print ("\nKeyword: ".@Keywords[$Keywordindex]);
+  print ("\nSoundIDs:");
+  foreach (@SoundIDs) {print " $_"; print "*" if ($_ eq $Selected);};
+  print ("\nAudio: $Preview");
+  print ("\nInfo: $Query");
+
+  # Play the preview and wait
+  $Play = $Player; 
+  $Play =~ s/_AUDIOURL_/$Preview/g;
+  print ("\nPlaying: $Play\r");
+  $Ignored = `$Play`;
+  sleep(20); 
+}
+
+sub fnField () {
+  $field = shift (@_);
+  $data = shift (@_); 
+
+
+}
