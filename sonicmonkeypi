@@ -1,0 +1,115 @@
+#!/usr/bin/perl
+# Soundmonkey for tiny Linuxes
+# Required: curl, play (sox) - or edit $Get and $Player
+# Optional: Edit keyword list (see @Keywords)
+# Hint: Run several instances
+# To do: Get/track paged results
+# local sounds cache, author info display 
+# local search results on-disk cache? Or threads?
+
+# Settings
+my @Keywords=split(
+  /\,/, 
+  "ambiance,ambience,atmosphere,background,background-sound,"
+  ."environment,environmental,soundscape,"
+  ."tv,television,radio,"
+  ."spaceship,sci-fi,sciencefiction,"
+  ."outerspace,startrek,star-trek,nasa"
+);
+my $Get="/usr/bin/curl --silent -o -";
+# my $Player="/usr/bin/play -q \"_AUDIOURL_\" fade 1.5 8 1.5";
+my $Player="/usr/bin/play -q \"_AUDIOURL_\" fade 3.5";
+my $Host="http://www.freesound.org/apiv2";
+my $Token="012e5b385463f30b2fd860b0692ea631fa5a941f";
+# my $Token="99e6ae450631b8228756d83de03a24ef87f593ae";
+my $Search="search/text/?query=_KEYWORD_&token=$Token";
+my %Listings;  # Search listing cache
+my $Info="sounds/_SOUNDID_/?token=$Token";
+
+while (true) {
+
+  # Choose a keyword search
+  $KeywordIndex = int(rand(@Keywords));
+  $Keyword = @Keywords[$KeywordIndex];
+  $Query = "$Host/$Search";
+  $Query =~ s/_KEYWORD_/$Keyword/g;
+
+  # Prefer cached results
+  if ($Listings{$Keyword}) {
+    $WasCached = 1;
+    $Listing = $Listings{$Keyword};
+  } else {
+    $WasCached = 0;
+    $Listing = `$Get \"$Query\"`; 
+    $Listings{$Keyword} = $Listing; # Cache it
+  }
+
+# print "\nDEBUG: Query is \n $Query \n";
+# print "\nDEBUG: Listing is \n $Listing \n";
+
+  # Get search listing
+  $Sounds = $1 if ($Listing =~ /\"count\"\:\s*(\d+)\,/);
+  @ListingFields = split (/\,/, $Listing);
+  @SoundIDs = grep (/\"id\"\:\s\d+/, @ListingFields); 
+  @SoundIDs = grep (s/\D+//g, @SoundIDs);
+
+  # Pick a sound ID
+  $Selected = @SoundIDs[int(rand(scalar(@SoundIDs)))]; 
+
+  # Get the sound metadata record
+  $Query = "$Host/$Info";
+  $Query =~ s/_SOUNDID_/$Selected/g;
+  $SoundMeta = `$Get \"$Query\"`; 
+  $SoundPreview = $1 if (
+    $SoundMeta =~ /\"preview-hq-ogg\"\:\s*\"(.*\.ogg)\"\,/
+  );
+  $SoundAuthor = $1 if (
+    $SoundMeta =~ /\"username\"\:\s*\"([\w|\d]+)\"\,/
+  );
+  $SoundName = $1 if (
+    $SoundMeta =~ /\"name\"\:\s*\"([\w|\d|\s|\.]+)\"\,/
+  );
+  $SoundDesc = $1 if (
+    $SoundMeta =~ /\"description\"\:\s*\"([\w|\d|\s|\.|\/|\']+)\"\,/m
+  );
+  $SoundLength = $1 if (
+    $SoundMeta =~ /\"duration\"\:\s*(\d+\.\d+)\,/
+  );
+  $SoundRating = $1 if (
+    $SoundMeta =~ /\"avg_rating\"\:\s*(\d+\.\d+)\,/
+  );
+
+  # Info
+  print ("\n"."-" x 48);
+  print ("\nKeyword : ".$Keyword);
+  print (" (cached)") if ($WasCached);
+  print ("\nSoundIDs:");
+  foreach (@SoundIDs) {print " $_"; print "*" if ($_ eq $Selected);};
+  print ("\nName       : $SoundName");
+  print ("\nAuthor     : $SoundAuthor");
+  print ("\nDescription: $SoundDesc");
+  print ("\nLength     : $SoundLength");
+  print ("\nRating     : $SoundRating");
+  print ("\nAudio      : $SoundPreview");
+  print ("\nInfo       : $Query");
+  print ("\n"."-" x 48);
+
+  # Play the preview and wait
+  $Play = $Player; 
+  $Play =~ s/_AUDIOURL_/$SoundPreview/g;
+  print ("\nPlaying...\r");
+  $Ignored = `$Play &`;
+  print ("\r           \r");
+  sleep(5); 
+  print ("\rChoosing...\r");
+}
+
+# Get single-instance field from sound detail
+sub fnField () {
+  $field = shift (@_);
+  $data = shift (@_); 
+
+
+  $desiredfield = @matches[0];
+
+}
