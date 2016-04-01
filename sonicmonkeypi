@@ -8,13 +8,13 @@
 # local search results on-disk cache? Or threads?
 
 # Settings
-my @Keywords=split(
-  /\,/, 
-  "ambiance,ambience,atmosphere,background,background-sound,"
-  ."environment,environmental,soundscape,"
-  ."tv,television,radio,"
-  ."spaceship,sci-fi,sciencefiction,"
-  ."outerspace,startrek,star-trek,nasa"
+my @Keywords = split (/ /, 
+  "ambiance ambience atmosphere background background-sound "
+  ."environment environmental soundscape "
+  ."forest ocean "
+  ."tv television radio "
+  # ."outerspace startrek star-trek nasa"
+  # ."spaceship,sci-fi,sciencefiction,"
 );
 my $Get="/usr/bin/curl --silent -o -";
 # my $Player="/usr/bin/play -q \"_AUDIOURL_\" fade 1.5 8 1.5";
@@ -25,6 +25,18 @@ my $Search="search/text/?query=_KEYWORD_&token=$Token";
 my %Listings;  # Search listing cache
 my $Info="sounds/_SOUNDID_/?token=$Token";
 
+# Get single-instance field from sound detail
+# ------------------------------------------------------
+sub fnField {
+  $field = shift (@_);
+  $data = shift (@_); 
+  $match = "n/a";
+  $match = $1 if ( $data =~ /\"$field\"\:\s\"*([^\\\"]+)\"*\,/);
+  return ($match);
+}
+
+# Mainline
+# ------------------------------------------------------
 while (true) {
 
   # Choose a keyword search
@@ -43,9 +55,6 @@ while (true) {
     $Listings{$Keyword} = $Listing; # Cache it
   }
 
-# print "\nDEBUG: Query is \n $Query \n";
-# print "\nDEBUG: Listing is \n $Listing \n";
-
   # Get search listing
   $Sounds = $1 if ($Listing =~ /\"count\"\:\s*(\d+)\,/);
   @ListingFields = split (/\,/, $Listing);
@@ -59,24 +68,14 @@ while (true) {
   $Query = "$Host/$Info";
   $Query =~ s/_SOUNDID_/$Selected/g;
   $SoundMeta = `$Get \"$Query\"`; 
-  $SoundPreview = $1 if (
-    $SoundMeta =~ /\"preview-hq-ogg\"\:\s*\"(.*\.ogg)\"\,/
-  );
-  $SoundAuthor = $1 if (
-    $SoundMeta =~ /\"username\"\:\s*\"([\w|\d]+)\"\,/
-  );
-  $SoundName = $1 if (
-    $SoundMeta =~ /\"name\"\:\s*\"([\w|\d|\s|\.]+)\"\,/
-  );
-  $SoundDesc = $1 if (
-    $SoundMeta =~ /\"description\"\:\s*\"([\w|\d|\s|\.|\/|\']+)\"\,/m
-  );
-  $SoundLength = $1 if (
-    $SoundMeta =~ /\"duration\"\:\s*(\d+\.\d+)\,/
-  );
-  $SoundRating = $1 if (
-    $SoundMeta =~ /\"avg_rating\"\:\s*(\d+\.\d+)\,/
-  );
+
+  $SoundPreview = fnField ("preview-hq-ogg", $SoundMeta);
+  $SoundAuthor = fnField ("username", $SoundMeta);
+  $SoundName = fnField ("name", $SoundMeta);
+  $SoundDesc = fnField ("description", $SoundMeta);
+  $SoundLength = fnField ("duration", $SoundMeta);
+  $SoundRating = fnField ("avg_rating", $SoundMeta);
+  $SoundLicense = fnField ("license", $SoundMeta);
 
   # Info
   print ("\n"."-" x 48);
@@ -89,8 +88,9 @@ while (true) {
   print ("\nDescription: $SoundDesc");
   print ("\nLength     : $SoundLength");
   print ("\nRating     : $SoundRating");
-  print ("\nAudio      : $SoundPreview");
+  print ("\nLicense    : $SoundLicense");
   print ("\nInfo       : $Query");
+  # print ("\nAudio      : $SoundPreview");
   print ("\n"."-" x 48);
 
   # Play the preview and wait
@@ -101,14 +101,4 @@ while (true) {
   print ("\r           \r");
   sleep(5); 
   print ("\rChoosing...\r");
-}
-
-# Get single-instance field from sound detail
-sub fnField () {
-  $field = shift (@_);
-  $data = shift (@_); 
-
-
-  $desiredfield = @matches[0];
-
 }
