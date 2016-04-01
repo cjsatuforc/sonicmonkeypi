@@ -97,7 +97,7 @@ while (true) {
   $Play = $Player; 
   $Play =~ s/_AUDIOURL_/$SoundPreview/g;
   print ("\nPlaying...\r");
-  $Ignored = `$Play &`;
+  $Ignored = `$Play`;
   print ("\r           \r");
   sleep(5); 
   print ("\rChoosing...\r");
