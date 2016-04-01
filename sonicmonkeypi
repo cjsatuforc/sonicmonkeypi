@@ -21,7 +21,6 @@ my $Get="/usr/bin/curl --silent -o -";
 my $Player="/usr/bin/play -q \"_AUDIOURL_\" fade 3.5";
 my $Host="http://www.freesound.org/apiv2";
 my $Token="99e6ae450631b8228756d83de03a24ef87f593ae";
-# my $Token="99e6ae450631b8228756d83de03a24ef87f593ae";
 my $Search="search/text/?query=_KEYWORD_&token=$Token";
 my %Listings;  # Search listing cache
 my $Info="sounds/_SOUNDID_/?token=$Token";
