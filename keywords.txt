@@ -1,0 +1,9 @@
+background background-sound
+environment environmental environmental-sounds-research
+field-recording
+weather rain storm thunderstorm
+outside nature forest rain
+tv television radio tuner
+symphony orchestra theatre tuning
+windchimes violin cello strings orchestral
+mantra chant

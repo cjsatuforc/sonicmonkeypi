@@ -1,0 +1,217 @@
+#!/usr/bin/perl
+# -----------------------------------------------------
+# Soundmonkey for tiny Linuxes, preview version
+# @diemastermonkey / @garyd
+# Required: 
+#   A FreeSound API key - get one here:
+#     http://freesound.org/help/developers/ 
+#   curl, play (sox) - or edit $Get and $Player
+#   /bin/sh (forked)
+#
+# Optional:
+#   Add keywords in keywords.txt
+#   Edit output format in format.txt
+#
+# To do / missing features
+#   Almost no error checking 
+#   Cache expirey - it grows forever
+#   Connect it to outside world
+# -----------------------------------------------------
+#
+
+# Default search keywords 
+my @Keywords = split (/\s+/, 
+  "drone droning ambiance ambience shortwave");
+
+# Settings
+my $Get="/usr/bin/curl --silent -o -";
+my $Token=`cat token.txt`;	# Brutal, no err check
+chomp($Token);
+my $Format=`cat format.txt`;    # No err check
+my $Player="/usr/bin/play -q \"cache/_SOUNDID_.ogg\""
+  ." gain -n 1.5"	           # vs norm is faster
+  ." fade _FIN_ _RIDE_ _FOUT_"
+  ." pitch _PITCH_"
+  ." echo _EIN_ _EGAIN_ _ETIME_ _EOUT_";
+my $Host="http://www.freesound.org/apiv2";
+my $Search="search/text/?query=_KEYWORD_&token=$Token"
+  ."&filter=duration:\\[30\%20TO\%20120\\]";	# Ware tricky escaping
+my $Download="$Get \"_AUDIOURL_\" > cache/_SOUNDID_.ogg";
+my $Info="sounds/_SOUNDID_/?token=$Token";
+my $Touch="/usr/bin/touch ";	# filename wll be appended
+my %Listings;                   # Search listing cache
+
+# Get single-instance field from sound detail
+# ------------------------------------------------------
+sub fnField {
+  $field = shift (@_);
+  $data = shift (@_); 
+  $match = "n/a";
+  $match = $1 if (
+    $data =~ /\"$field\"\:\s\"*([^\\\"]+)\"*\,/
+  );
+  return ($match);
+}
+
+# Cache a set of keyword query results to disk
+# ------------------------------------------------------
+sub fnCacheWrite {
+  my $word = shift (@_);
+  my $data = shift (@_);
+  open (OUT, ">cache/$word.cache")
+    or die ("\nFatal: Can't write cache/$word.cache .\n");
+  print (OUT $data);
+  close (OUT);
+}
+
+# Read a cache
+# ------------------------------------------------------
+sub fnCacheRead {
+  my $word = shift (@_);
+  open (IN, "<cache/$word.cache")
+    or die ("\nFatal: Can't read cache/$word.cache.\n");
+  my $data = <IN>;
+  close (IN);
+  # Crudely update timestamp for cache expirey
+  $ignored = `$Touch cache/$word.cache`;
+  return ($data);
+}
+
+# Sound player 
+# ------------------------------------------------------
+sub fnPlay {
+  my $cmd = shift (@_);
+  open (PLAY, "|/bin/sh|")
+    or die ("\nFatal: Can't open player with $Player\n");
+  print (PLAY "$cmd \&");
+  close (PLAY);
+}
+
+# Mainline
+# ------------------------------------------------------
+
+# Append contents of 'keywords.txt' if exists
+if (-r "keywords.txt") { 
+  $raw = `cat keywords.txt`; 	# Brutal
+  push (@Keywords, split (/\n+|\s+|\,/, $raw));
+}
+
+# Append keywords from cmd line if any
+if (grep(s/\=//, @ARGV)) { 
+  @Keywords = @ARGV;       # Override all with =keyword
+} else {                   # Else append all (or none)
+  push (@Keywords, shift (@ARGV)) if (@ARGV);
+}
+
+# Make cache dir if no exist
+unless (-d "cache") { `mkdir cache` };
+
+# Loop forever (to do: num runs on cmdline)
+while (true) {
+
+  # Choose a keyword search
+  $KeywordIndex = int(rand(@Keywords));
+  $Keyword = @Keywords[$KeywordIndex];
+  $Query = "$Host/$Search";
+  $Query =~ s/_KEYWORD_/$Keyword/g;
+
+  # Prefer cached results
+  if (-r "cache/$Keyword.cache") {	# Cache exists on disk
+    $WasCached = 1;
+    $Listing = fnCacheRead($Keyword); 
+  } else {
+    $WasCached = 0;
+    $Listing = `$Get \"$Query\"`; 
+    $Listings{$Keyword} = $Listing; # Memory cache
+    fnCacheWrite ($Keyword, $Listing);  # Add to cache
+  }
+
+  # Grok search listing
+  $Sounds = $1 if ($Listing =~ /\"count\"\:\s*(\d+)\,/);
+  @ListingFields = split (/\,/, $Listing);
+  @SoundIDs = grep (/\"id\"\:\s\d+/, @ListingFields); 
+  @SoundIDs = grep (s/\D+//g, @SoundIDs);
+
+  # Pick a sound ID
+  $Selected = @SoundIDs[int(rand(scalar(@SoundIDs)))]; 
+
+  # New: Prefer cached sound metadata
+  if (-r "cache/$Selected-data.cache") {
+    # Exists in cache 
+    $SoundMeta = fnCacheRead("$Selected\-data"); 
+  } else {
+    # Get the sound metadata record
+    $Query = "$Host/$Info";
+    $Query =~ s/_SOUNDID_/$Selected/g;
+    $SoundMeta = `$Get \"$Query\"`; 
+    fnCacheWrite ("$Selected\-data", $SoundMeta); # Add to cache 
+  }
+
+  # HQ $SoundPreview = fnField ("preview-hq-ogg", $SoundMeta);
+  $SoundPreview = fnField ("preview-lq-ogg", $SoundMeta);
+  $SoundAuthor = fnField ("username", $SoundMeta);
+  $SoundName = fnField ("name", $SoundMeta);
+  $SoundDesc = fnField ("description", $SoundMeta);
+  $SoundLength = fnField ("duration", $SoundMeta);
+  $SoundRating = fnField ("avg_rating", $SoundMeta);
+  $SoundLicense = fnField ("license", $SoundMeta);
+  $SoundURL = fnField ("url", $SoundMeta);
+
+  # Info
+  # Rating: $SoundRating");
+  # print ("\nAudio  : $SoundPreview");
+  printf ($Format, 
+    $Selected,	  # id
+    $SoundAuthor, # author
+    $SoundLength, # len
+    $Keyword,     # keyword
+    $SoundName,   # title
+    $SoundLicense,# license
+    $SoundURL,    # URL
+    $SoundDesc    # desc
+  ); 
+
+  # Crude audio cache
+  if (-r "cache/$Selected.ogg") {
+    # To do: expire old caches
+  } else {        # BruteCache (tm)
+    $Query = $Download;
+    $Query =~ s/_AUDIOURL_/$SoundPreview/g;
+    $Query =~ s/_SOUNDID_/$Selected/g;
+    print ("\nBruteCaching(tm)...\r");
+    $SoundMeta = `$Query`; 
+  }
+
+  # Kludge special effects parms
+  $FadeIn = $SoundLength / 5;
+  $FadeOut = $SoundLength / 3;
+  # $FadeRide = $FadeIn * 4;
+  $FadeRide = 0; # Makes ride all remaining len?
+  $Pitch = -1 * int(rand(2000)); # Hardwired pitch-down range
+  $EchoIn = 0.01 + rand(0.2);
+  $EchoGain = 0.01 + rand(0.2);
+  $EchoTime = rand(5000);
+  $EchoOut = 0.01 + rand(0.2);
+
+  # Play the preview and wait
+  $Play = $Player; 
+  $Play =~ s/_SOUNDID_/$Selected/g;
+  $Play =~ s/_FIN_/$FadeIn/g;
+  $Play =~ s/_RIDE_/$FadeRide/g;
+  $Play =~ s/_FOUT_/$FadeOut/g;
+  $Play =~ s/_PITCH_/$Pitch/g;
+  $Play =~ s/_EIN_/$EchoIn/g;
+  $Play =~ s/_EGAIN_/$EchoGain/g;
+  $Play =~ s/_ETIME_/$EchoTime/g;
+  $Play =~ s/_EOUT_/$EchoOut/g;
+
+  # Use new play via shell pipe
+  print ("\r                     \rPlaying... \n"); # Pre-erases
+  fnPlay ($Play);
+
+  # Wait for 1/Xth length of the audio
+  print ("\rResting...\n");
+  sleep (int ($SoundLength / 5));
+  print ("\rChoosing...\n");
+}
+
