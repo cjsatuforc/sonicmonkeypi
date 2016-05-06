@@ -10,9 +10,9 @@ Watch an early sample run: https://www.youtube.com/watch?v=hHADwchSK6U
 5. FreeSound.org API key, from freesound.org/help/developers/
 
 # Setup
-1. Place API key in token.txt
-2. Optional: Edit keywords.txt
-3. Optional: Edit format.txt
+1. Put the kit's files in a directory
+2. Paste your API key into token.txt
+3. Optional: Edit keywords.txt / format.txt
 
 # Run: Using built-in + keywords.txt:
       perl sonicmonkeypi
@@ -21,7 +21,7 @@ Watch an early sample run: https://www.youtube.com/watch?v=hHADwchSK6U
       perl sonicmonkeypi monkeys
 
 # Run: Use only keyword 'monkeys':
-     perl sonicmonkeypi =monkeys
+      perl sonicmonkeypi =monkeys
 
 # Bugs:
-So many. Almost no error checking. No cache expirey yet either!
+Soo many. Almost no error checking. No cache expirey yet either!
