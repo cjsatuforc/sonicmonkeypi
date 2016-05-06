@@ -2,16 +2,12 @@
 PI (and other small Linux) incarnation of my Android app "Sonic Monkey", the ambient drone noise machine.
 
 # Required
-      *nix with /bin/sh
-      
-      Perl (3+?) - sudo apt-get install perl
-      
-      curl       - sudo apt-get install curl 
-      
-      sox        - sudo apt-get install sox
-
-      FreeSound.org API key, from 
-      freesound.org/help/developers/
+*nix with /bin/sh
+Perl (3+?) - sudo apt-get install perl
+curl       - sudo apt-get install curl 
+sox        - sudo apt-get install sox
+FreeSound.org API key, from 
+     freesound.org/help/developers/
 
 # Setup
       1. Place API key in token.txt
