@@ -1,5 +1,6 @@
 # sonicmonkeypi
 PI (and other small Linux) incarnation of my Android app "Sonic Monkey", the ambient drone noise machine.
+Draws from latest FreeSound Community content, based on configurable keywords.
 
 # Required
 1. *nix with /bin/sh
