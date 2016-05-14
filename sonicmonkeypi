@@ -17,25 +17,38 @@
 #   Cache expirey - it grows forever
 #   Connect it to outside world
 # -----------------------------------------------------
-#
+# Other fields of interest:
+# bitdepth, samplerate 
+# (URIs) analysis, analysis_stats, similar_sounds, images
+# -----------------------------------------------------
 
 # Default search keywords 
 my @Keywords = split (/\s+/, 
-  "drone droning ambiance ambience shortwave");
+  "drone pad environmental");
 
 # Settings
+my $MinLen=18; my $MaxLen=71;
 my $Get="/usr/bin/curl --silent -o -";
-my $Token=`cat token.txt`;	# Brutal, no err check
-chomp($Token);
-my $Format=`cat format.txt`;    # No err check
-my $Player="/usr/bin/play -q \"cache/_SOUNDID_.ogg\""
-  ." gain -n 1.5"	           # vs norm is faster
-  ." fade _FIN_ _RIDE_ _FOUT_"
-  ." pitch _PITCH_"
-  ." echo _EIN_ _EGAIN_ _ETIME_ _EOUT_";
+my $Token=`cat token.txt`; chomp($Token); # No err check
+my $Format=`cat format.txt`;              # No err check
+my $RunCount = -1;			  # -1 forever
+
+my $Player="/usr/bin/play -V0 -q "
+  ."\"cache/_SOUNDID_.ogg\" "             # Filename
+  ."contrast 0.86 "	
+  # ."_ECHOPARMS_ "
+  # ."echo _EIN_ _EGAIN_ _ETIME_ _EOUT_ "
+  #  ."reverb 50"
+  # ."gain -n 1 "
+  ."_BENDPARMS_ "          # Lo rez/parms at runtime
+  ."repeat _REPEATS_ "      # Range 0 (one play) to N
+  ."fade _FIN_ _RIDE_ _FOUT_ "            # Fx...
+  ." ";
+
 my $Host="http://www.freesound.org/apiv2";
 my $Search="search/text/?query=_KEYWORD_&token=$Token"
-  ."&filter=duration:\\[30\%20TO\%20120\\]";	# Ware tricky escaping
+  ."&filter=duration:\\[$MinLen\%20TO\%20$MaxLen\\]";# Ware escaping
+
 my $Download="$Get \"_AUDIOURL_\" > cache/_SOUNDID_.ogg";
 my $Info="sounds/_SOUNDID_/?token=$Token";
 my $Touch="/usr/bin/touch ";	# filename wll be appended
@@ -44,11 +57,11 @@ my %Listings;                   # Search listing cache
 # Get single-instance field from sound detail
 # ------------------------------------------------------
 sub fnField {
-  $field = shift (@_);
-  $data = shift (@_); 
+  my $field = shift (@_);
+  my $data = shift (@_); 
   $match = "n/a";
   $match = $1 if (
-    $data =~ /\"$field\"\:\s\"*([^\\\"]+)\"*\,/
+    $data =~ /\"$field\"\:\s*\"*([^\\\"]+)\"*\,/
   );
   return ($match);
 }
@@ -72,8 +85,7 @@ sub fnCacheRead {
     or die ("\nFatal: Can't read cache/$word.cache.\n");
   my $data = <IN>;
   close (IN);
-  # Crudely update timestamp for cache expirey
-  $ignored = `$Touch cache/$word.cache`;
+  $ignored = `$Touch cache/$word.cache`; # For crude cache expiry
   return ($data);
 }
 
@@ -96,6 +108,11 @@ if (-r "keywords.txt") {
   push (@Keywords, split (/\n+|\s+|\,/, $raw));
 }
 
+# First lone number if any in argv assumed to be runcount
+if (grep (/\d/, @ARGV)) {
+  $RunCount = shift (@ARGV);
+}
+
 # Append keywords from cmd line if any
 if (grep(s/\=//, @ARGV)) { 
   @Keywords = @ARGV;       # Override all with =keyword
@@ -106,8 +123,9 @@ if (grep(s/\=//, @ARGV)) {
 # Make cache dir if no exist
 unless (-d "cache") { `mkdir cache` };
 
-# Loop forever (to do: num runs on cmdline)
-while (true) {
+# Loop either forever, or till RunCount exhausted
+while ($RunCount < 0 or $RunCount > 0) {
+  $RunCount--;
 
   # Choose a keyword search
   $KeywordIndex = int(rand(@Keywords));
@@ -115,36 +133,37 @@ while (true) {
   $Query = "$Host/$Search";
   $Query =~ s/_KEYWORD_/$Keyword/g;
 
-  # Prefer cached results
-  if (-r "cache/$Keyword.cache") {	# Cache exists on disk
+  # Use cached results if found
+  if (-r "cache/$Keyword.cache") {
     $WasCached = 1;
     $Listing = fnCacheRead($Keyword); 
   } else {
     $WasCached = 0;
     $Listing = `$Get \"$Query\"`; 
-    $Listings{$Keyword} = $Listing; # Memory cache
+    # $Listings{$Keyword} = $Listing;     # Memory cache
     fnCacheWrite ($Keyword, $Listing);  # Add to cache
   }
 
   # Grok search listing
   $Sounds = $1 if ($Listing =~ /\"count\"\:\s*(\d+)\,/);
   @ListingFields = split (/\,/, $Listing);
-  @SoundIDs = grep (/\"id\"\:\s\d+/, @ListingFields); 
+  @SoundIDs = grep (/\"id\"\:\s*\d+/, @ListingFields); 
   @SoundIDs = grep (s/\D+//g, @SoundIDs);
 
   # Pick a sound ID
   $Selected = @SoundIDs[int(rand(scalar(@SoundIDs)))]; 
 
-  # New: Prefer cached sound metadata
+  # Use cached sound metadata if found
   if (-r "cache/$Selected-data.cache") {
-    # Exists in cache 
     $SoundMeta = fnCacheRead("$Selected\-data"); 
+    $SoundCached = "|";		# Indicate was cached
   } else {
     # Get the sound metadata record
     $Query = "$Host/$Info";
     $Query =~ s/_SOUNDID_/$Selected/g;
     $SoundMeta = `$Get \"$Query\"`; 
     fnCacheWrite ("$Selected\-data", $SoundMeta); # Add to cache 
+    $SoundCached = ">";
   }
 
   # HQ $SoundPreview = fnField ("preview-hq-ogg", $SoundMeta);
@@ -164,6 +183,7 @@ while (true) {
     $Selected,	  # id
     $SoundAuthor, # author
     $SoundLength, # len
+    $SoundCached, # cache indicator
     $Keyword,     # keyword
     $SoundName,   # title
     $SoundLicense,# license
@@ -178,20 +198,48 @@ while (true) {
     $Query = $Download;
     $Query =~ s/_AUDIOURL_/$SoundPreview/g;
     $Query =~ s/_SOUNDID_/$Selected/g;
-    print ("\nBruteCaching(tm)...\r");
+    # print ("\nBruteCaching(tm)...\r");
     $SoundMeta = `$Query`; 
   }
 
   # Kludge special effects parms
-  $FadeIn = $SoundLength / 5;
-  $FadeOut = $SoundLength / 3;
-  # $FadeRide = $FadeIn * 4;
+  $FadeIn = $SoundLength * 0.13 + $SoundLength * rand(0.05);
+  $FadeOut = $SoundLength * 0.09 + $SoundLength * rand(0.04);
   $FadeRide = 0; # Makes ride all remaining len?
-  $Pitch = -1 * int(rand(2000)); # Hardwired pitch-down range
-  $EchoIn = 0.01 + rand(0.2);
-  $EchoGain = 0.01 + rand(0.2);
-  $EchoTime = rand(5000);
-  $EchoOut = 0.01 + rand(0.2);
+  # $Pitch = -1 * int(rand(1000)); # Hardwired pitch-down range
+
+  # Handle echo or none 
+  $EchoParms = " ";
+  $EchoGain = 0;	# For display later
+  if (int(rand(2)) == 0) {
+    $EchoIn = 0.2 + rand(0.2);
+    $EchoGain = 0.2 + rand(0.1);
+    $EchoTime = 60 + rand(606);
+    $EchoOut = 0.2 + rand(0.1);
+    $EchoParms = " echo $EchoIn $EchoGain $EchoTime $EchoOut ";
+  }
+
+  # Repeats: Shorter samples repeat more, max 45s
+  $Repeats = 0;
+  $Repeats += int(rand(3)) if ($SoundLength < 31); # If larger, 0 
+  $Repeats += int(rand(3)) if ($SoundLength < 21);
+
+  # Apply bends to _BENDPARMS_
+  $BendParms = "";
+  $BendTemp = "";
+  $Bends = int(rand(3));
+  for ($i=0; $i < $Bends ; $i++) {
+    $BendDelay = $SoundLength / 10 * ($i+1);
+    $BendDelay *= 1 + rand(2);	# Could up to doulble
+    # Pitch bend. To do: Base on sample tone
+    $BendTime = $BendDelay * 0.75;      # Boring but safe?
+    $BendCents = int(rand(666));
+    $BendCents *= -1 if (int(rand(2))); # maybe invert
+    $BendTemp .= "$BendDelay,$BendCents,$BendTime ";
+  }
+  if ($Bends) {
+    $BendParms = "bend -f 10 -o 4 $BendTemp";
+  }
 
   # Play the preview and wait
   $Play = $Player; 
@@ -200,18 +248,21 @@ while (true) {
   $Play =~ s/_RIDE_/$FadeRide/g;
   $Play =~ s/_FOUT_/$FadeOut/g;
   $Play =~ s/_PITCH_/$Pitch/g;
-  $Play =~ s/_EIN_/$EchoIn/g;
-  $Play =~ s/_EGAIN_/$EchoGain/g;
-  $Play =~ s/_ETIME_/$EchoTime/g;
-  $Play =~ s/_EOUT_/$EchoOut/g;
+  $Play =~ s/_ECHOPARMS_/$EchoParms/g;
+  $Play =~ s/_BENDPARMS_/$BendParms/g;
+  $Play =~ s/_REPEATS_/$Repeats/g;
+  # print ("\R$Repeats B$Bends Fi$FadeIn Eg$EchoGain \n"); # Debug
 
   # Use new play via shell pipe
   print ("\r                     \rPlaying... \n"); # Pre-erases
   fnPlay ($Play);
 
   # Wait for 1/Xth length of the audio
-  print ("\rResting...\n");
-  sleep (int ($SoundLength / 5));
+  # print ("\rResting...\n");
+  sleep (int ($SoundLength * 0.90));
   print ("\rChoosing...\n");
 }
+
+# RunCount actually ehausted 
+print ("\nEnding (RunCount 0).");
 
