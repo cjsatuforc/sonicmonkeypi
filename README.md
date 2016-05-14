@@ -22,6 +22,9 @@ Watch an early sample run: https://www.youtube.com/watch?v=hHADwchSK6U
 
 # Run: Use only keyword 'monkeys':
       perl sonicmonkeypi =monkeys
+      
+# Run: Run only 6 times, with keyword (new!)
+      perl sonicmonkeypi 6 =monkeys
 
 # Bugs:
 Soo many. Almost no error checking. No cache expirey yet either!
