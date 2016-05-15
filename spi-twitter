@@ -1,0 +1,118 @@
+  use Net::Twitter;
+  use Scalar::Util 'blessed';
+
+  # When no authentication is required:
+  # my $nt = Net::Twitter->new(legacy => 0);
+
+  $last_id = `cat spilast.txt`; chomp ($last_id);
+  $last_id = "730523150308544512" if ($last_id eq ""); # safe default
+
+  $consumer_key = `cat tw-consumerkey.txt`; chomp ($consumer_key);
+  $consumer_secret = `cat tw-consumersecret.txt`; chomp ($consumer_secret);
+  $access_token = `cat tw-accesstoken.txt`; chomp ($access_token);
+  $access_token_secret = `cat tw-accesstokensecret.txt`; chomp ($access_token_secret);
+
+ my $nt = Net::Twitter->new(
+      traits   => [qw/API::RESTv1_1/],
+      consumer_key        => $consumer_key,
+      consumer_secret     => $consumer_secret,
+      access_token        => "3241907462-pLVKLzadcgSfsQHUhTKZSMdgR9zibyLDmvzRTEK",
+      access_token_secret => "FtYXz6IXvCsJ7PBioFiLMQY1kDKyBnNfVU4xflrnAkURv",
+  );
+
+
+# Sound player function
+# ------------------------------------------------------
+sub fnPlay {
+  my $cmd = shift (@_);
+  open (PLAY, "|/bin/sh|")
+    or die ("\nFatal: Can't open player with $Player\n");
+  print (PLAY "$cmd \&");
+  close (PLAY);
+}
+
+
+  # Mainline
+  #
+  print "\n-----------------------------------";
+  print ("\n".`date`);
+  print "-----------------------------------";
+
+  # Post example: my $result = $nt->update('Hello, world!');
+
+  # Mentions example
+  # my $mentions = $nt->mentions();  # With no args
+  # my $mentions = $nt->mentions({ since_id => $high_water, count => 100 });
+  my $mentions = $nt->mentions({ since_id => $last_id, count => 1 });
+
+  unless (scalar(@$mentions)) {
+    print ("\nNo new Twitter requests.");
+    if (0 == int(rand(12))) {  # Occasional reminder
+      print ("\nTweet to \@diemastermonkey, like this:\n");
+      print ("\n\t\@diemastermonkey drone MONKEYS ");
+      print ("\n\n...or any other key word, instead of monkeys.\n");
+    }
+    exit(0);
+  }
+
+  # Iterator, though only one or none should be returned
+  for my $mention (@$mentions) {
+    $id = $mention->{id};
+    print "\nRequest from \@".$mention->{user}{screen_name}." !";
+    print "\n".$mention->{created_at};
+    # print "\t# $id";
+    print "\n".$mention->{text};
+
+    # Processed
+    $text = $mention->{text};
+
+    # Ignored words, crappy version
+    $text =~ s/ none | nothing | a | the | and | or | if | is | i | are | on | no | yes | these | this | ok //g;
+    $text =~ s/\|//g;
+    $text =~ s/\\//g;
+    $text =~ s/\`|\"|\%|\^|\&|\*|\!|\'|\<|\>//g;
+
+    $keyword = $text;
+    $keyword =~ s/.* drone (\w+)\s*.*/$1/gi; # Only word after remains
+    $keyword = lc($keyword);
+    print "\nKeyword: $keyword";
+    print "\n";
+  }
+
+  # If anything left, treat as keyword
+  if ($keyword eq "") {
+    print ("\nSorry, no keywords found...");
+    exit(0);
+  } 
+
+  # Still here? Crudely spit out syntax w/rand runcount
+  $runs = int(rand(2)) + 2;
+  # print ("\nperl sonicmonkeypi $runs =$keyword ");
+  # print ("\n");
+
+  # Put last in spilast.txt
+  open (OUT, ">spilast.txt") or die ("\n$!\n");
+  print (OUT "$id");
+  close (OUT);
+
+  # Crude delay for user view msg
+  sleep (20);
+
+  # For now, just tick-out to perl/sm
+  fnPlay ("perl sonicmonkeypi $runs =$keyword ");
+
+  # Disused error code
+  if ( my $err = $@ ) {
+      die $@ unless blessed $err && $err->isa('Net::Twitter::Error');
+
+      warn "HTTP Response Code: ", $err->code, "\n",
+           "HTTP Message......: ", $err->message, "\n",
+           "Twitter error.....: ", $err->error, "\n";
+  }
+
+    # To dump all fields
+    # foreach $key (%$mention) {
+    #   printf ("\n    $key =".$mention->{$key});
+    # }
+
+
