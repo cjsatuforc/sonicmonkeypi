@@ -1,9 +1,23 @@
-background background-sound
-environment environmental environmental-sounds-research
-field-recording
-weather rain storm thunderstorm
-outside nature forest rain
-tv television radio tuner
-symphony orchestra theatre tuning
-windchimes violin cello strings orchestral
-mantra chant
+nature nature forest forest
+thunder thunder thunder thunder thunder
+france tokyo london berlin nyc angeles
+china mexico brazil italy amsterdam africa
+india russia
+public-address public-address public-address
+london-underground subway
+museum museum airport airport
+ferry ferry ferry ferry ferry ferry ferry ferry
+station shortwave scanner interference
+boiler-room boiler-room boiler-room 
+factory machinery
+vinyl vinyl
+orchestra
+strings strings
+windchimes windchimes windchimes windchimes windchimes
+ethnic chinese-traditional tibetan
+gamelan
+sitar sitar sitar sitar sitar sitar sitar sitar
+low-frequency low-frequency low-frequency low-frequency low-frequency
+circuit-bent circuit-bent circuit-bent circuit-bent circuit-bent 
+metamorphmuses modularsamples polymorpheva
+
