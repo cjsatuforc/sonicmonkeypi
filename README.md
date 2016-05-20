@@ -13,6 +13,7 @@ Watch an early sample run: https://www.youtube.com/watch?v=hHADwchSK6U
 1. Put the kit's files in a directory
 2. Paste your API key into token.txt
 3. Optional: Edit keywords.txt / format.txt
+4. Optional: Edit banlist.txt with authors or sound IDs to ignore
 
 # Run: Using built-in + keywords.txt:
       perl sonicmonkeypi
@@ -23,7 +24,7 @@ Watch an early sample run: https://www.youtube.com/watch?v=hHADwchSK6U
 # Run: Use only keyword 'monkeys':
       perl sonicmonkeypi =monkeys
       
-# Run: Run only 6 times, with keyword (new!)
+# Run: Run only 6 times, with single keyword
       perl sonicmonkeypi 6 =monkeys
 
 # Bugs:
