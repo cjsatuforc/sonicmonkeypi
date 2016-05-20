@@ -11,6 +11,7 @@
 # Optional:
 #   Add keywords in keywords.txt
 #   Edit output format in format.txt
+#   Add banned sound authors to balist.txt!
 #
 # To do / missing features
 #   Almost no error checking 
@@ -24,29 +25,35 @@
 
 # Default search keywords 
 my @Keywords = split (/\s+/, 
-  "drone pad environmental");
+  "sitar low-frequency circuit-bent thunder environmental");
 
 # Settings
-my $MinLen=18; my $MaxLen=71;
+my $MinLen=20; my $MaxLen=111;             # Len limits of samples
+my $PlayOverlap = 0.88;                   # pct overlap in sample play
+
 my $Get="/usr/bin/curl --silent -o -";
 my $Token=`cat token.txt`; chomp($Token); # No err check
 my $Format=`cat format.txt`;              # No err check
+my $Banlist = `cat banlist.txt`; chomp ($Banlist);
 my $RunCount = -1;			  # -1 forever
 
 my $Player="/usr/bin/play -V0 -q "
   ."\"cache/_SOUNDID_.ogg\" "             # Filename
-  ."contrast 0.86 "	
-  # ."_ECHOPARMS_ "
-  # ."echo _EIN_ _EGAIN_ _ETIME_ _EOUT_ "
-  #  ."reverb 50"
-  # ."gain -n 1 "
-  ."_BENDPARMS_ "          # Lo rez/parms at runtime
-  ."repeat _REPEATS_ "      # Range 0 (one play) to N
-  ."fade _FIN_ _RIDE_ _FOUT_ "            # Fx...
+  # ." --buffer 256 "    # Increase process buffer, default 8192
+  ." rate -l"            # -m or -h or -l quality
+  ." _SPEED_ "           # Speed effect if present
+  # ." _OOPS_ "            # out-of-phase aka Karaoke, present or not 
+  # ." contrast 0.85 "	 # Not useful? Look for norm?
+  ." _REVERSE_ "         # either present or not (INSANE)
+  ." _ECHOPARMS_ "
+  ." repeat _REPEATS_ "      # Range 0 (one play) to N
+  ." _BENDPARMS_ "          # Lo rez/parms at runtime
+  ." fade _FIN_ _RIDE_ _FOUT_ "            # Fx...
   ." ";
 
 my $Host="http://www.freesound.org/apiv2";
 my $Search="search/text/?query=_KEYWORD_&token=$Token"
+  ."&page_size=150"				     # Hardwired results size
   ."&filter=duration:\\[$MinLen\%20TO\%20$MaxLen\\]";# Ware escaping
 
 my $Download="$Get \"_AUDIOURL_\" > cache/_SOUNDID_.ogg";
@@ -176,9 +183,17 @@ while ($RunCount < 0 or $RunCount > 0) {
   $SoundLicense = fnField ("license", $SoundMeta);
   $SoundURL = fnField ("url", $SoundMeta);
 
+  # New: Skip completely if author or ID on banlist
+  # WARNING, a silent eternal loop possible here! FIX !
+  if ($Banlist =~ /$SoundAuthor/i or $Banlist =~ /$Selected/i) { 
+    print ("...skipped $SoundAuthor"); # trails
+    next;  # Skip rest of loop
+  }
+
   # Info
   # Rating: $SoundRating");
   # print ("\nAudio  : $SoundPreview");
+  print ("\n");   # Breaks trailing display
   printf ($Format, 
     $Selected,	  # id
     $SoundAuthor, # author
@@ -203,37 +218,37 @@ while ($RunCount < 0 or $RunCount > 0) {
   }
 
   # Kludge special effects parms
-  $FadeIn = $SoundLength * 0.13 + $SoundLength * rand(0.05);
-  $FadeOut = $SoundLength * 0.09 + $SoundLength * rand(0.04);
-  $FadeRide = 0; # Makes ride all remaining len?
+  $FadeIn = $SoundLength * 0.20;
+  $FadeOut = $SoundLength * 0.25;
+  $FadeIn = 10 if ($FadeIn > 10);
+  $FadeOut = 10 if ($FadeOut > 10);
+  $FadeRide = 0; # Makes ride all remaining len
   # $Pitch = -1 * int(rand(1000)); # Hardwired pitch-down range
 
-  # Handle echo or none 
+  # Handle echo or none Update: actually is delay
   $EchoParms = " ";
-  $EchoGain = 0;	# For display later
-  if (int(rand(2)) == 0) {
-    $EchoIn = 0.2 + rand(0.2);
-    $EchoGain = 0.2 + rand(0.1);
-    $EchoTime = 60 + rand(606);
-    $EchoOut = 0.2 + rand(0.1);
-    $EchoParms = " echo $EchoIn $EchoGain $EchoTime $EchoOut ";
+  if (int(rand(5)) == 0) {
+    $EchoTime = 0.5 + rand(6.6);
+    # $EchoParms = " delay 0 $EchoTime ";   # Only 2nd channel delayed, is faster
+    $EchoParms = " delay $EchoTime ";   # Only 2nd channel delayed, is faster
   }
 
   # Repeats: Shorter samples repeat more, max 45s
   $Repeats = 0;
-  $Repeats += int(rand(3)) if ($SoundLength < 31); # If larger, 0 
-  $Repeats += int(rand(3)) if ($SoundLength < 21);
+  $Repeats += int(rand(3)) if ($SoundLength < 41); # If larger, 0 
 
   # Apply bends to _BENDPARMS_
   $BendParms = "";
   $BendTemp = "";
   $Bends = int(rand(3));
+  if ($Bends) {$Bends = 1 if ($SoundLength < 61);} # No multibend short samples
+  $sections = $SoundLength / 10;
   for ($i=0; $i < $Bends ; $i++) {
-    $BendDelay = $SoundLength / 10 * ($i+1);
+    $BendDelay = $sections * ($i + 1);
     $BendDelay *= 1 + rand(2);	# Could up to doulble
     # Pitch bend. To do: Base on sample tone
-    $BendTime = $BendDelay * 0.75;      # Boring but safe?
-    $BendCents = int(rand(666));
+    $BendTime = $sections;      # Boring but safe?
+    $BendCents = -1 * int(rand(333));
     $BendCents *= -1 if (int(rand(2))); # maybe invert
     $BendTemp .= "$BendDelay,$BendCents,$BendTime ";
   }
@@ -241,28 +256,43 @@ while ($RunCount < 0 or $RunCount > 0) {
     $BendParms = "bend -f 10 -o 4 $BendTemp";
   }
 
+  # Rarely, enable reverse play
+  $Reverse = "";   # dumb
+  if (int(rand(5)) == 0) {
+    $Reverse = "reverse";
+  }
+
+  # Rarely, speed effect (slow only)
+  $Speed = "";   # dumb
+  if (int(rand(9)) == 0) {
+    $s = rand(0.6) + 0.38;  # Range 0.4 - 1.0
+    $Speed = " speed $s ";
+  }
+
   # Play the preview and wait
+  # print ("\R$Repeats B$Bends Fi$FadeIn Eg$EchoGain \n"); # Debug
   $Play = $Player; 
   $Play =~ s/_SOUNDID_/$Selected/g;
   $Play =~ s/_FIN_/$FadeIn/g;
   $Play =~ s/_RIDE_/$FadeRide/g;
   $Play =~ s/_FOUT_/$FadeOut/g;
-  $Play =~ s/_PITCH_/$Pitch/g;
+  $Play =~ s/_SPEED_/$Speed/g; 
+  $Play =~ s/_OOPS_/$Oops/g; 
+  $Play =~ s/_REVERSE_/$Reverse/g;   # Totally insane
   $Play =~ s/_ECHOPARMS_/$EchoParms/g;
   $Play =~ s/_BENDPARMS_/$BendParms/g;
   $Play =~ s/_REPEATS_/$Repeats/g;
-  # print ("\R$Repeats B$Bends Fi$FadeIn Eg$EchoGain \n"); # Debug
 
-  # Use new play via shell pipe
+  # Play via shell pipe
   print ("\r                     \rPlaying... \n"); # Pre-erases
   fnPlay ($Play);
 
   # Wait for 1/Xth length of the audio
   # print ("\rResting...\n");
-  sleep (int ($SoundLength * 0.90));
-  print ("\rChoosing...\n");
+  sleep (int ($SoundLength * $PlayOverlap));
+  print ("\rChoosing...");
 }
 
-# RunCount actually ehausted 
+# RunCount used up 
 print ("\nEnding (RunCount 0).");
-
+# fin
