@@ -33,8 +33,13 @@ Soo many. Almost no error checking. No cache expirey yet either!
 # The files and their purpose
 
 sonicmonkeypi	Main Perl program
+
 token.txt         YOUR Freesound API key (mandatory!)
+
 keywords.txt	Search words for finding sounds in Freesound
+
 banlist.txt	      SoundIDs or authors you never want to hear in the mix
+
 format.txt        Log/screen display layout. Edit if desired (not easy)
+
 log.txt	      Example of log file that program generates
