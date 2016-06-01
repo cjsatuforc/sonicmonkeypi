@@ -3,47 +3,47 @@
 # Soundmonkey for tiny Linuxes, preview version
 # @diemastermonkey / @garyd
 # Required: 
-#   A FreeSound API key - get one here:
-#     http://freesound.org/help/developers/ 
-#   curl, play (sox) - or edit $Get and $Player
-#   /bin/sh (forked)
+#   1. A FreeSound API key - get one here:
+#      http://freesound.org/help/developers/ 
+#   2. curl, play (sox) - or edit $Get and $Player
+#      /bin/sh (forked)
 #
 # Optional:
 #   Add keywords in keywords.txt
 #   Edit output format in format.txt
-#   Add banned sound authors to balist.txt!
+#   Add banned sound authors to banlist.txt!
 #
 # To do / missing features
 #   Almost no error checking 
 #   Cache expirey - it grows forever
 #   Connect it to outside world
 # -----------------------------------------------------
-# Other fields of interest:
-# bitdepth, samplerate 
-# (URIs) analysis, analysis_stats, similar_sounds, images
-# -----------------------------------------------------
 
 # Default search keywords 
-my @Keywords = split (/\s+/, 
-  "sitar low-frequency circuit-bent thunder environmental");
+my $DefaultKeywords = "low-frequency vinyl thunder sitar seashore";
+# my @Keywords = split (/\s+/, $DefaultKeywords);
 
 # Settings
-my $MinLen=20; my $MaxLen=111;             # Len limits of samples
-my $PlayOverlap = 0.88;                   # pct overlap in sample play
+my $MinLen=40; my $MaxLen=120;   # Len limits of samples
+my $PlayOverlap = 0.75;          # pct overlap in sample play
+my $ConfigRefresh = 6;          # How often (cycles) to re-read cfgs
 
 my $Get="/usr/bin/curl --silent -o -";
 my $Token=`cat token.txt`; chomp($Token); # No err check
 my $Format=`cat format.txt`;              # No err check
+my $Remixes = "remixes";	# Where remixes go
 my $Banlist = `cat banlist.txt`; chomp ($Banlist);
 my $RunCount = -1;			  # -1 forever
+my $CycleCount = 0;                       # For periodic events
 
-my $Player="/usr/bin/play -V0 -q "
+# Sound player command with fields
+my $Player="/usr/bin/play -V0 -q --volume 0.8 "
   ."\"cache/_SOUNDID_.ogg\" "             # Filename
   # ." --buffer 256 "    # Increase process buffer, default 8192
-  ." rate -l"            # -m or -h or -l quality
-  ." _SPEED_ "           # Speed effect if present
   # ." _OOPS_ "            # out-of-phase aka Karaoke, present or not 
   # ." contrast 0.85 "	 # Not useful? Look for norm?
+  ." rate -l"            # -m or -h or -l quality
+  ." _SPEED_ "           # Speed effect if present
   ." _REVERSE_ "         # either present or not (INSANE)
   ." _ECHOPARMS_ "
   ." repeat _REPEATS_ "      # Range 0 (one play) to N
@@ -57,9 +57,14 @@ my $Search="search/text/?query=_KEYWORD_&token=$Token"
   ."&filter=duration:\\[$MinLen\%20TO\%20$MaxLen\\]";# Ware escaping
 
 my $Download="$Get \"_AUDIOURL_\" > cache/_SOUNDID_.ogg";
-my $Info="sounds/_SOUNDID_/?token=$Token";
+
+# Info request includes some analysis for later similarity matches
+my $Info="sounds/_SOUNDID_/?descriptors=lowlevel.pitch.mean,rhythm.bpm&token=$Token";
 my $Touch="/usr/bin/touch ";	# filename wll be appended
 my %Listings;                   # Search listing cache
+
+# When populated, Next (a sound ID) played instead of random selection
+my $Next = "";
 
 # Get single-instance field from sound detail
 # ------------------------------------------------------
@@ -68,7 +73,8 @@ sub fnField {
   my $data = shift (@_); 
   $match = "n/a";
   $match = $1 if (
-    $data =~ /\"$field\"\:\s*\"*([^\\\"]+)\"*\,/
+    # $data =~ /\"$field\"\:\s*\"*([^\\\"]+)\"*\,/
+    $data =~ /\"$field\"\:\s*\"*([^\\\"]+)\"*(\,|\n|\})/
   );
   return ($match);
 }
@@ -106,19 +112,29 @@ sub fnPlay {
   close (PLAY);
 }
 
+# Grok keywords 
+# ------------------------------------------------------
+sub fnKeywords {
+  # Start with default keywords
+  @Keywords = split (/\s+/, $DefaultKeywords);
+
+  # Append contents of 'keywords.txt' if exists
+  if (-r "keywords.txt") { 
+    $raw = `cat keywords.txt`; 	# Brutal
+    push (@Keywords, split (/\n+|\s+|\,/, $raw));
+  }
+}
+
 # Mainline
 # ------------------------------------------------------
 
-# Append contents of 'keywords.txt' if exists
-if (-r "keywords.txt") { 
-  $raw = `cat keywords.txt`; 	# Brutal
-  push (@Keywords, split (/\n+|\s+|\,/, $raw));
-}
-
-# First lone number if any in argv assumed to be runcount
+# First digit in argv, if any, treated as runcount
 if (grep (/\d/, @ARGV)) {
   $RunCount = shift (@ARGV);
 }
+
+# Get (or update) keywords
+fnKeywords();
 
 # Append keywords from cmd line if any
 if (grep(s/\=//, @ARGV)) { 
@@ -132,33 +148,48 @@ unless (-d "cache") { `mkdir cache` };
 
 # Loop either forever, or till RunCount exhausted
 while ($RunCount < 0 or $RunCount > 0) {
+  $CycleCount++;
   $RunCount--;
 
-  # Choose a keyword search
-  $KeywordIndex = int(rand(@Keywords));
-  $Keyword = @Keywords[$KeywordIndex];
-  $Query = "$Host/$Search";
-  $Query =~ s/_KEYWORD_/$Keyword/g;
-
-  # Use cached results if found
-  if (-r "cache/$Keyword.cache") {
-    $WasCached = 1;
-    $Listing = fnCacheRead($Keyword); 
-  } else {
-    $WasCached = 0;
-    $Listing = `$Get \"$Query\"`; 
-    # $Listings{$Keyword} = $Listing;     # Memory cache
-    fnCacheWrite ($Keyword, $Listing);  # Add to cache
+  # If time to refresh settings
+  if ($CycleCount % $ConfigRefresh == 0) {
+    $Banlist = `cat banlist.txt`; chomp ($Banlist); # Refresh brutally
+    fnKeywords();         # Currently discards cmd-line additions
   }
 
-  # Grok search listing
-  $Sounds = $1 if ($Listing =~ /\"count\"\:\s*(\d+)\,/);
-  @ListingFields = split (/\,/, $Listing);
-  @SoundIDs = grep (/\"id\"\:\s*\d+/, @ListingFields); 
-  @SoundIDs = grep (s/\D+//g, @SoundIDs);
+  # Choose a keyword search unless a "next" already set
+  if ($Next eq "") {
+    $KeywordIndex = int(rand(@Keywords));
+    $Keyword = @Keywords[$KeywordIndex];
+    $Query = "$Host/$Search";
+    $Query =~ s/_KEYWORD_/$Keyword/g;
 
-  # Pick a sound ID
-  $Selected = @SoundIDs[int(rand(scalar(@SoundIDs)))]; 
+    # Use cached results if found
+    if (-r "cache/$Keyword.cache") {
+      $WasCached = 1;
+      $Listing = fnCacheRead($Keyword); 
+    } else {
+      $WasCached = 0;
+      $Listing = `$Get \"$Query\"`; 
+      fnCacheWrite ($Keyword, $Listing);  # Add to cache
+    }
+
+    # Grok search listing
+    $Sounds = $1 if ($Listing =~ /\"count\"\:\s*(\d+)\,/);
+    @ListingFields = split (/\,/, $Listing);
+    @SoundIDs = grep (/\"id\"\:\s*\d+/, @ListingFields); 
+    @SoundIDs = grep (s/\D+//g, @SoundIDs);
+
+    # Pick a sound ID
+    $Selected = @SoundIDs[int(rand(scalar(@SoundIDs)))]; 
+  }
+
+  # Ignore all that if Next specified (cheesy)
+  unless ($Next eq "") {
+    # print ("\nNote: Next specified as $Next ...");
+    $Selected = $Next;
+    $Next = "";
+  }
 
   # Use cached sound metadata if found
   if (-r "cache/$Selected-data.cache") {
@@ -173,7 +204,9 @@ while ($RunCount < 0 or $RunCount > 0) {
     $SoundCached = ">";
   }
 
+  # Get fields out of raw results
   # HQ $SoundPreview = fnField ("preview-hq-ogg", $SoundMeta);
+  $SoundID = $Selected;		# Convenience
   $SoundPreview = fnField ("preview-lq-ogg", $SoundMeta);
   $SoundAuthor = fnField ("username", $SoundMeta);
   $SoundName = fnField ("name", $SoundMeta);
@@ -182,8 +215,16 @@ while ($RunCount < 0 or $RunCount > 0) {
   $SoundRating = fnField ("avg_rating", $SoundMeta);
   $SoundLicense = fnField ("license", $SoundMeta);
   $SoundURL = fnField ("url", $SoundMeta);
+  $SoundSimilar = fnField ("similar_sounds", $SoundMeta);
+  $SoundAnalysis = fnField ("analysis", $SoundMeta);
+  # EXPERIMENTAL new bpm NOTE: Smashed to INT !
+  $SoundBPM = int(fnField ("bpm", $SoundMeta));  
 
-  # New: Skip completely if author or ID on banlist
+  # Quick cleanup
+  $SoundURL =~ s/http:\/\///gi;
+  $SoundLicense =~ s/http:\/\///gi;
+
+  # New: Stupidly skip if author or ID on banlist
   # WARNING, a silent eternal loop possible here! FIX !
   if ($Banlist =~ /$SoundAuthor/i or $Banlist =~ /$Selected/i) { 
     print ("...skipped $SoundAuthor"); # trails
@@ -192,7 +233,6 @@ while ($RunCount < 0 or $RunCount > 0) {
 
   # Info
   # Rating: $SoundRating");
-  # print ("\nAudio  : $SoundPreview");
   print ("\n");   # Breaks trailing display
   printf ($Format, 
     $Selected,	  # id
@@ -200,11 +240,14 @@ while ($RunCount < 0 or $RunCount > 0) {
     $SoundLength, # len
     $SoundCached, # cache indicator
     $Keyword,     # keyword
-    $SoundName,   # title
+    "$SoundName ($SoundBPM bpm)",   # title plus kludged bpm
     $SoundLicense,# license
     $SoundURL,    # URL
     $SoundDesc    # desc
   ); 
+  print ("\n\n");	# Balance to 10 lines high
+
+  # print ("\nDEBUG: \n Similar = $SoundSimilar \n Analysis = $SoundAnalysis \n");
 
   # Crude audio cache
   if (-r "cache/$Selected.ogg") {
@@ -218,37 +261,35 @@ while ($RunCount < 0 or $RunCount > 0) {
   }
 
   # Kludge special effects parms
-  $FadeIn = $SoundLength * 0.20;
+  $FadeIn = $SoundLength * 0.25;
   $FadeOut = $SoundLength * 0.25;
   $FadeIn = 10 if ($FadeIn > 10);
   $FadeOut = 10 if ($FadeOut > 10);
   $FadeRide = 0; # Makes ride all remaining len
-  # $Pitch = -1 * int(rand(1000)); # Hardwired pitch-down range
 
   # Handle echo or none Update: actually is delay
-  $EchoParms = " ";
-  if (int(rand(5)) == 0) {
-    $EchoTime = 0.5 + rand(6.6);
-    # $EchoParms = " delay 0 $EchoTime ";   # Only 2nd channel delayed, is faster
-    $EchoParms = " delay $EchoTime ";   # Only 2nd channel delayed, is faster
+  $EchoParms = " ";			# dumb
+  if (int(rand(2)) == 0) {
+    $EchoTime = 0.25 + rand(3.3);
+    $EchoParms = " delay $EchoTime ";   # Just 2nd channel delayed, faster
   }
 
   # Repeats: Shorter samples repeat more, max 45s
   $Repeats = 0;
-  $Repeats += int(rand(3)) if ($SoundLength < 41); # If larger, 0 
+  $Repeats += int(rand(5)) if ($SoundLength < 61); # If larger, 0 
 
   # Apply bends to _BENDPARMS_
   $BendParms = "";
   $BendTemp = "";
-  $Bends = int(rand(3));
-  if ($Bends) {$Bends = 1 if ($SoundLength < 61);} # No multibend short samples
-  $sections = $SoundLength / 10;
+  $Bends = int(rand(4));
+  if ($Bends) {$Bends = 1 if ($SoundLength < 51);} # No multibend short samples
+  $sections = $SoundLength / 4;
   for ($i=0; $i < $Bends ; $i++) {
     $BendDelay = $sections * ($i + 1);
-    $BendDelay *= 1 + rand(2);	# Could up to doulble
+    $BendDelay *= 1 + rand(2);	# Could up to double
     # Pitch bend. To do: Base on sample tone
     $BendTime = $sections;      # Boring but safe?
-    $BendCents = -1 * int(rand(333));
+    $BendCents = -1 * int(rand(555));
     $BendCents *= -1 if (int(rand(2))); # maybe invert
     $BendTemp .= "$BendDelay,$BendCents,$BendTime ";
   }
@@ -258,19 +299,18 @@ while ($RunCount < 0 or $RunCount > 0) {
 
   # Rarely, enable reverse play
   $Reverse = "";   # dumb
-  if (int(rand(5)) == 0) {
+  if (int(rand(4)) == 0) {
     $Reverse = "reverse";
   }
 
   # Rarely, speed effect (slow only)
   $Speed = "";   # dumb
-  if (int(rand(9)) == 0) {
-    $s = rand(0.6) + 0.38;  # Range 0.4 - 1.0
+  if (int(rand(2)) == 0) {
+    $s = rand(0.40) + 0.50;  # Range 0.6 - 0.9
     $Speed = " speed $s ";
   }
 
   # Play the preview and wait
-  # print ("\R$Repeats B$Bends Fi$FadeIn Eg$EchoGain \n"); # Debug
   $Play = $Player; 
   $Play =~ s/_SOUNDID_/$Selected/g;
   $Play =~ s/_FIN_/$FadeIn/g;
@@ -284,15 +324,51 @@ while ($RunCount < 0 or $RunCount > 0) {
   $Play =~ s/_REPEATS_/$Repeats/g;
 
   # Play via shell pipe
-  print ("\r                     \rPlaying... \n"); # Pre-erases
   fnPlay ($Play);
 
   # Wait for 1/Xth length of the audio
-  # print ("\rResting...\n");
-  sleep (int ($SoundLength * $PlayOverlap));
-  print ("\rChoosing...");
+  $SleepTime = int ($SoundLength * $PlayOverlap);
+  $SleepTime = 30 if ($SleepTime > 30);  # Max sleeptime
+  sleep ($SleepTime);
+
+  # While waiting, possibly choose a related sound to play next
+  # IF rating high enough - and lucky
+  # MOSTLY duped in main logic, fix that
+  if ($SoundRating > 2.0 && int(rand(4)) == 0) {
+    # Fetch 'similar' URL
+    $turl = "http://www.freesound.org/apiv2/sounds/$SoundID/similar/?token=$Token";
+    # ."&filter=duration:\\[$MinLen\%20TO\%20$MaxLen\\]"; # Broken
+    $SimilarRaw = `$Get \"$turl\"`; 
+
+    # TO DO: Empty results error check
+    
+    # Grok IDs from it, pick one
+    @ListingFields = split (/\,/, $SimilarRaw);
+    @SoundIDs = grep (/\"id\"\:\s*\d+/, @ListingFields); 
+    @SoundIDs = grep (s/\D+//g, @SoundIDs);
+    $Selected = @SoundIDs[int(rand(scalar(@SoundIDs)))]; 
+    $Next = $Selected;
+    # print ("\nDEBUG: SimilarRaw is \n $SimilarRaw");
+
+    # Kludge: "keyword" to reflect the "follow"
+    $Keyword = "Followed from $SoundID";  # current, not next, id
+  }
+
+  # Remix: If high rating, long enough, becomes latest remix source
+  if ($SoundRating > 2.0 && $SoundLength > 50) {
+    $Ignored = `sox cache/$SoundID\.ogg -c 2 remix/excerpt.wav rate -v 44100`;
+  }
+
+  # BPM: Possibly update the global bpm file
+  $SoundBPM =~ s/\D+//g;  # Superfluous?
+  if ($SoundBPM > 30 && $SoundBPM < 120) {
+    # Fast bpms sometimes halved
+    if ($SoundBPM > 80 && int(rand(2)) == 0) {
+      $SoundBPM = $SoundBPM / 2 if (int(rand(2)) == 0);
+    }
+    $Ignored = `echo $SoundBPM > beatbot.bpm`;
+  }
+
 }
 
-# RunCount used up 
-print ("\nEnding (RunCount 0).");
 # fin
